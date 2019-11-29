@@ -22,6 +22,7 @@ import sys
 import os
 import math
 
+import helper
 # TODO: Don't just read the TODO sections in this code.  Remember that
 # one of the goals of this assignment is for you to learn how to use
 # Mininet. :-)
@@ -82,6 +83,13 @@ class BBTopo(Topo):
 
         # TODO: Add links with appropriate characteristics
 
+        _delay = '%fms' % args.delay
+        self.addLink(hosts[0], switch, 
+                     bw=args.bw_host, delay=_delay, max_queue_size=args.maxq)
+	self.addLink(hosts[1], switch, 
+                     bw=args.bw_net, delay=_delay, max_queue_size=args.maxq)
+	return
+
 # Simple wrappers around monitoring utilities.  You are welcome to
 # contribute neatly written (using classes) monitoring scripts for
 # Mininet!
@@ -108,18 +116,21 @@ def start_iperf(net):
     # For those who are curious about the -w 16m parameter, it ensures
     # that the TCP flow is not receiver window limited.  If it is,
     # there is a chance that the router buffer may not get filled up.
-    server = h2.popen("iperf -s -w 16m")
     # TODO: Start the iperf client on h1.  Ensure that you create a
-    # long lived TCP flow. You may need to redirect iperf's stdout to avoid blocking.
+    # long lived TCP flow.
+    server = h2.popen("iperf -s -w 16m")
+    h1 = net.get('h1')
+    client = h1.popen("iperf -t %d -c %s" % (args.time, h2.IP()))
+    
 
 def start_webserver(net):
-    h1 = net.get('h1')
+    h1 = net.getNodeByName('h1')
     proc = h1.popen("python http/webserver.py", shell=True)
     sleep(1)
     return [proc]
 
 def start_ping(net):
-    # TODO: Start a ping train from h1 to h2 (or h2 to h1, does it
+    # Start a ping train from h1 to h2 (or h2 to h1, does it
     # matter?)  Measure RTTs every 0.1 second.  Read the ping man page
     # to see how to do this.
 
@@ -129,8 +140,17 @@ def start_ping(net):
     # Note that if the command prints out a lot of text to stdout, it will block
     # until stdout is read. You can avoid this by runnning popen.communicate() or
     # redirecting stdout
+    
     h1 = net.get('h1')
-    popen = h1.popen("echo '' > %s/ping.txt"%(args.dir), shell=True)
+    h2 = net.get('h2')
+    h1.popen("ping -c %s -i 0.1 %s > %s/ping.txt" % (args.time * 10, h2.IP(), args.dir), shell=True)
+    
+    return
+
+def request_webserver(net, outfile):
+    h1 = net.get('h1')
+    h2 = net.get('h2')
+    h2.popen("curl -o /dev/null -s -w %%{time_total} %s/http/index.html > %s/%s" % (h1.IP(), args.dir, outfile), shell=True)
 
 def bufferbloat():
     if not os.path.exists(args.dir):
@@ -151,38 +171,35 @@ def bufferbloat():
 
     # Start all the monitoring processes
     start_tcpprobe("cwnd.txt")
-    start_ping(net)
 
     # TODO: Start monitoring the queue sizes.  Since the switch I
     # created is "s0", I monitor one of the interfaces.  Which
     # interface?  The interface numbering starts with 1 and increases.
     # Depending on the order you add links to your network, this
     # number may be 1 or 2.  Ensure you use the correct number.
-    #
-    # qmon = start_qmon(iface='s0-eth2',
-    #                  outfile='%s/q.txt' % (args.dir))
-    qmon = None
+    qmon = start_qmon(iface='s0-eth2',
+                      outfile='%s/q.txt' % (args.dir))
 
     # TODO: Start iperf, webservers, etc.
-    # start_iperf(net)
-
-    # Hint: The command below invokes a CLI which you can use to
-    # debug.  It allows you to run arbitrary commands inside your
-    # emulated hosts h1 and h2.
-    #
-    # CLI(net)
+    start_iperf(net)
+    start_ping(net)
+    start_webserver(net)
 
     # TODO: measure the time it takes to complete webpage transfer
     # from h1 to h2 (say) 3 times.  Hint: check what the following
     # command does: curl -o /dev/null -s -w %{time_total} google.com
     # Now use the curl command to fetch webpage from the webserver you
     # spawned on host h1 (not from google!)
+
     # Hint: have a separate function to do this and you may find the
     # loop below useful.
     start_time = time()
+    ref = 0
     while True:
         # do the measurement (say) 3 times.
-        sleep(1)
+        request_webserver(net, 'curl_%d.txt' % ref)
+        ref += 1;
+        sleep(5)
         now = time()
         delta = now - start_time
         if delta > args.time:
@@ -192,6 +209,32 @@ def bufferbloat():
     # TODO: compute average (and standard deviation) of the fetch
     # times.  You don't need to plot them.  Just note it in your
     # README and explain.
+    
+    fetch_sum = 0
+    fetch_times = []
+    count = 0
+    for i in range(0, ref):
+        fetch_file = open('%s/curl_%d.txt' % (args.dir, i),'r')
+        fetch_time = fetch_file.readline();
+        if (fetch_time):
+            fetch_sum += float(fetch_time)
+            fetch_times.append(fetch_time)
+            count += 1
+
+    avg = fetch_sum / count
+    print("The average web downloading time is: %lf\n" % avg)
+
+    std_dev = 0
+    for fetch_time in fetch_times:
+        std_dev += (avg - float(fetch_time))**2
+    std_dev /= count
+    std_dev = math.sqrt(std_dev)
+    print("The standard deviation web downloading time is: %lf\n" % std_dev)
+
+    # Hint: The command below invokes a CLI which you can use to
+    # debug.  It allows you to run arbitrary commands inside your
+    # emulated hosts h1 and h2.
+    # CLI(net)
 
     stop_tcpprobe()
     if qmon is not None:

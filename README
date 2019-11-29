@@ -1,0 +1,26 @@
+When q = 20:
+The average web downloading time is: 0.696833
+The standard deviation web downloading time is: 0.353133
+
+When q = 100:
+The average web downloading time is: 1.345833
+The standard deviation web downloading time is: 0.577948
+
+1. Why do you see a difference in webpage fetch times with short and large router buffers?
+
+Because a large router buffers will have a larger buffer size than shorte router buffers. Since this buffer is a first in first out queue, which means when a new fetching with webserver comes into the router buffer with larger buffer size, it has to wait a longer time. When a new fetching comes into the router buffer with smaller buffer size, it then has to wait a shorter time.
+
+2. Bufferbloat can occur in other places such as your network interface card (NIC). Check the output of ifconfig eth0 on your VirtualBox VM. What is the (maximum) transmit queue length on the network interface reported by ifconfig? For this queue size, if you assume the queue drains at 100Mb/s, what is the maximum time a packet might wait in the queue before it leaves the NIC?
+
+From the ifconfig, the queue length is 1000, and the MTU is 1500 bytes, thus the total queue size is 1500 * 1000 = 1.5Mb. Therefore, the maximum time a packet could wait is 1.5 / 100 = 0.015s.
+
+3.How does the RTT reported by ping vary with the queue size? Write a symbolic equation to describe the relation between the two (ignore computation overheads in ping that might affect the final result).
+
+RTT = base delay or RTT of just the links + (queue size / slowest link speed).
+
+4. Identify and describe two ways to mitigate the bufferbloat problem.
+
+* Reduce the size of the buffer size, this way will minimize the time any packet spent in the router.
+* Classify different kinds of traffic and assign bandwidth to each traffic properly. For example, some traffic has low latency thus assigning a small amound of bandwidth to it is enough, thus we could save bandwidth for some other traffics that are do require some bandwidth.
+
+
